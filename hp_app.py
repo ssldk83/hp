@@ -116,7 +116,7 @@ class HeatPumpCalculator:
         # Antoine equation: log10(P) = A - B/(C + T)
         # Where P is in mmHg and T is in °C
         log_p_mmhg = props.antoine_a - props.antoine_b / (props.antoine_c + temp)
-        p_mmhg = 10 ** log_p_mmhg
+        p_mmhg = math.pow(10, log_p_mmhg)  # Use math.pow instead of **
         p_bar = p_mmhg * 0.00133322  # Convert mmHg to bar
         
         return p_bar
