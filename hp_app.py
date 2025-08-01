@@ -1,16 +1,17 @@
-import math
+import CoolProp.CoolProp as CP
+from CoolProp.CoolProp import PropsSI
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Tuple, Optional
 from enum import Enum
 
 class Refrigerant(Enum):
-    """Supported refrigerants with their properties"""
-    PROPANE = "R290"  # Hydrocarbon
-    ISOBUTANE = "R600a"  # Hydrocarbon
-    PROPYLENE = "R1270"  # Hydrocarbon
-    AMMONIA = "R717"
-    CO2 = "R744"
+    """Supported refrigerants with CoolProp names"""
+    PROPANE = "Propane"  # R290
+    ISOBUTANE = "IsoButane"  # R600a
+    PROPYLENE = "Propylene"  # R1270
+    AMMONIA = "Ammonia"  # R717
+    CO2 = "CarbonDioxide"  # R744
 
 class HeatSource(Enum):
     """Available heat sources"""
@@ -18,72 +19,12 @@ class HeatSource(Enum):
     WASTEWATER = "Wastewater"
     DATACENTER_WATER = "Datacenter Water"
 
-@dataclass
-class RefrigerantProperties:
-    """Refrigerant thermodynamic properties"""
-    name: str
-    critical_temp: float  # °C
-    critical_pressure: float  # bar
-    boiling_point: float  # °C at 1 atm
-    # Antoine equation coefficients for vapor pressure
-    antoine_a: float
-    antoine_b: float
-    antoine_c: float
-
-# Refrigerant properties database
-REFRIGERANT_PROPERTIES = {
-    Refrigerant.PROPANE: RefrigerantProperties(
-        name="Propane (R290)",
-        critical_temp=96.74,
-        critical_pressure=42.51,
-        boiling_point=-42.1,
-        antoine_a=15.726,
-        antoine_b=1872.46,
-        antoine_c=-25.16
-    ),
-    Refrigerant.ISOBUTANE: RefrigerantProperties(
-        name="Isobutane (R600a)",
-        critical_temp=134.66,
-        critical_pressure=36.40,
-        boiling_point=-11.7,
-        antoine_a=15.854,
-        antoine_b=2348.67,
-        antoine_c=-27.85
-    ),
-    Refrigerant.PROPYLENE: RefrigerantProperties(
-        name="Propylene (R1270)",
-        critical_temp=91.06,
-        critical_pressure=45.55,
-        boiling_point=-47.6,
-        antoine_a=15.7027,
-        antoine_b=1807.53,
-        antoine_c=-26.15
-    ),
-    Refrigerant.AMMONIA: RefrigerantProperties(
-        name="Ammonia (R717)",
-        critical_temp=132.25,
-        critical_pressure=113.33,
-        boiling_point=-33.34,
-        antoine_a=16.9481,
-        antoine_b=2132.50,
-        antoine_c=-32.98
-    ),
-    Refrigerant.CO2: RefrigerantProperties(
-        name="Carbon Dioxide (R744)",
-        critical_temp=31.06,
-        critical_pressure=73.77,
-        boiling_point=-78.46,  # Sublimation point at 1 atm
-        antoine_a=22.5898,
-        antoine_b=3103.39,
-        antoine_c=-0.16
-    )
-}
-
 class HeatPumpCalculator:
     def __init__(self):
-        self.compressor_efficiency = 0.75  # Typical isentropic efficiency
+        self.compressor_efficiency = 0.75  # Isentropic efficiency
         self.mechanical_efficiency = 0.95  # Mechanical/electrical efficiency
         self.heat_exchanger_effectiveness = 0.85  # Heat exchanger effectiveness
+        self.pressure_drop_ratio = 0.02  # 2% pressure drop in heat exchangers
         
     def get_heat_source_temp(self, source: HeatSource, ambient_temp: float = 10.0) -> Tuple[float, float]:
         """
@@ -91,53 +32,16 @@ class HeatPumpCalculator:
         Returns: (min_temp, max_temp) in °C
         """
         if source == HeatSource.AIR:
-            # Air temperature varies with ambient
             return (ambient_temp - 5, ambient_temp)
         elif source == HeatSource.WASTEWATER:
-            # Wastewater typically 10-20°C
             return (10, 20)
         elif source == HeatSource.DATACENTER_WATER:
-            # Datacenter cooling water typically 20-35°C
             return (20, 35)
-    
-    def calculate_saturation_pressure(self, temp: float, refrigerant: Refrigerant) -> float:
-        """
-        Calculate saturation pressure using Antoine equation
-        temp: Temperature in °C
-        Returns: Pressure in bar
-        """
-        props = REFRIGERANT_PROPERTIES[refrigerant]
-        
-        # For CO2 near critical point, use different correlation
-        if refrigerant == Refrigerant.CO2 and temp > 25:
-            # Simplified correlation for CO2 near critical point
-            return 73.77 * (1 - (31.06 - temp) / 31.06) ** 2
-        
-        # Antoine equation: log10(P) = A - B/(C + T)
-        # Where P is in mmHg and T is in °C
-        log_p_mmhg = props.antoine_a - props.antoine_b / (props.antoine_c + temp)
-        p_mmhg = math.pow(10, log_p_mmhg)  # Use math.pow instead of **
-        p_bar = p_mmhg * 0.00133322  # Convert mmHg to bar
-        
-        return p_bar
-    
-    def calculate_cop_carnot(self, t_evap: float, t_cond: float) -> float:
-        """
-        Calculate ideal Carnot COP
-        t_evap: Evaporator temperature in °C
-        t_cond: Condenser temperature in °C
-        Returns: Carnot COP
-        """
-        t_evap_k = t_evap + 273.15
-        t_cond_k = t_cond + 273.15
-        
-        cop_carnot = t_cond_k / (t_cond_k - t_evap_k)
-        return cop_carnot
     
     def calculate_cop_real(self, t_evap: float, t_cond: float, refrigerant: Refrigerant,
                           subcooling: float = 5, superheat: float = 5) -> Dict[str, float]:
         """
-        Calculate real COP considering refrigerant properties and inefficiencies
+        Calculate real COP using CoolProp for accurate refrigerant properties
         
         Parameters:
         t_evap: Evaporator temperature in °C
@@ -148,93 +52,159 @@ class HeatPumpCalculator:
         
         Returns: Dictionary with COP and other performance parameters
         """
-        # Check if operating conditions are feasible
-        props = REFRIGERANT_PROPERTIES[refrigerant]
-        if t_cond >= props.critical_temp:
-            # Transcritical operation for CO2
-            if refrigerant == Refrigerant.CO2:
-                return self._calculate_cop_transcritical_co2(t_evap, t_cond, subcooling, superheat)
-            else:
-                raise ValueError(f"Condenser temperature {t_cond}°C exceeds critical temperature "
-                               f"{props.critical_temp}°C for {props.name}")
+        fluid = refrigerant.value
         
-        # Calculate pressures
-        p_evap = self.calculate_saturation_pressure(t_evap, refrigerant)
-        p_cond = self.calculate_saturation_pressure(t_cond, refrigerant)
+        # Convert temperatures to Kelvin
+        T_evap = t_evap + 273.15
+        T_cond = t_cond + 273.15
         
-        # Pressure ratio
-        pressure_ratio = p_cond / p_evap
-        
-        # Estimate compressor work (simplified)
-        # Using polytropic compression with typical exponent
-        n = 1.2  # Polytropic exponent
-        t_evap_k = t_evap + 273.15
-        t_discharge_k = t_evap_k * (pressure_ratio ** ((n - 1) / n))
-        
-        # Specific work (normalized)
-        w_comp = (t_discharge_k - t_evap_k) / self.compressor_efficiency
-        
-        # Heat rejected (normalized)
-        q_cond = t_discharge_k - (t_cond + 273.15) + (t_cond - t_evap)
-        
-        # COP calculation
-        cop_real = q_cond / w_comp * self.mechanical_efficiency * self.heat_exchanger_effectiveness
-        
-        # Carnot COP for reference
-        cop_carnot = self.calculate_cop_carnot(t_evap, t_cond)
-        
-        # Carnot efficiency
-        carnot_efficiency = cop_real / cop_carnot
-        
-        return {
-            'cop_real': cop_real,
-            'cop_carnot': cop_carnot,
-            'carnot_efficiency': carnot_efficiency,
-            'pressure_ratio': pressure_ratio,
-            'evaporator_pressure': p_evap,
-            'condenser_pressure': p_cond,
-            'discharge_temp': t_discharge_k - 273.15
-        }
+        try:
+            # Get critical properties
+            T_crit = PropsSI('Tcrit', fluid)
+            P_crit = PropsSI('Pcrit', fluid)
+            
+            # Check for transcritical operation
+            if T_cond >= T_crit:
+                if refrigerant == Refrigerant.CO2:
+                    return self._calculate_cop_transcritical_co2(
+                        t_evap, t_cond, subcooling, superheat
+                    )
+                else:
+                    raise ValueError(f"Condenser temperature {t_cond}°C exceeds critical "
+                                   f"temperature {T_crit-273.15:.1f}°C for {refrigerant.name}")
+            
+            # Get saturation pressures
+            P_evap = PropsSI('P', 'T', T_evap, 'Q', 1, fluid)
+            P_cond = PropsSI('P', 'T', T_cond, 'Q', 1, fluid)
+            
+            # Apply pressure drops
+            P_evap_out = P_evap * (1 - self.pressure_drop_ratio)
+            P_cond_in = P_cond * (1 + self.pressure_drop_ratio)
+            
+            # State points for simple vapor compression cycle
+            # State 1: Compressor inlet (superheated vapor)
+            T1 = T_evap + superheat
+            h1 = PropsSI('H', 'T', T1, 'P', P_evap_out, fluid)
+            s1 = PropsSI('S', 'T', T1, 'P', P_evap_out, fluid)
+            
+            # State 2s: Isentropic compression endpoint
+            h2s = PropsSI('H', 'S', s1, 'P', P_cond_in, fluid)
+            T2s = PropsSI('T', 'S', s1, 'P', P_cond_in, fluid)
+            
+            # State 2: Actual compression endpoint
+            h2 = h1 + (h2s - h1) / self.compressor_efficiency
+            T2 = PropsSI('T', 'H', h2, 'P', P_cond_in, fluid)
+            
+            # State 3: Condenser outlet (subcooled liquid)
+            T3 = T_cond - subcooling
+            h3 = PropsSI('H', 'T', T3, 'P', P_cond, fluid)
+            
+            # State 4: After expansion valve (two-phase)
+            h4 = h3  # Isenthalpic expansion
+            T4 = PropsSI('T', 'H', h4, 'P', P_evap, fluid)
+            x4 = PropsSI('Q', 'H', h4, 'P', P_evap, fluid)  # Vapor quality
+            
+            # Performance calculations
+            w_comp = (h2 - h1) / 1000  # kJ/kg
+            q_cond = (h2 - h3) / 1000  # kJ/kg
+            q_evap = (h1 - h4) / 1000  # kJ/kg
+            
+            # COP calculation
+            COP_cooling = q_evap / w_comp
+            COP_heating = q_cond / w_comp
+            
+            # Apply mechanical and heat exchanger efficiencies
+            COP_heating_real = COP_heating * self.mechanical_efficiency * self.heat_exchanger_effectiveness
+            
+            # Carnot COP for reference
+            COP_carnot = T_cond / (T_cond - T_evap)
+            
+            # Volumetric heating capacity (kW/m³)
+            v1 = 1 / PropsSI('D', 'T', T1, 'P', P_evap_out, fluid)  # Specific volume
+            VHC = q_cond / v1  # kJ/m³
+            
+            return {
+                'cop_heating': COP_heating_real,
+                'cop_cooling': COP_cooling * self.mechanical_efficiency * self.heat_exchanger_effectiveness,
+                'cop_carnot': COP_carnot,
+                'carnot_efficiency': COP_heating_real / COP_carnot,
+                'pressure_ratio': P_cond_in / P_evap_out,
+                'evaporator_pressure': P_evap / 1e5,  # Convert to bar
+                'condenser_pressure': P_cond / 1e5,  # Convert to bar
+                'discharge_temp': T2 - 273.15,  # Convert to °C
+                'compressor_work': w_comp,
+                'heating_capacity': q_cond,
+                'cooling_capacity': q_evap,
+                'vapor_quality_after_expansion': x4,
+                'volumetric_heating_capacity': VHC / 1000  # MW/m³
+            }
+            
+        except Exception as e:
+            raise ValueError(f"CoolProp calculation error: {str(e)}")
     
     def _calculate_cop_transcritical_co2(self, t_evap: float, t_gas_cooler: float,
                                          subcooling: float, superheat: float) -> Dict[str, float]:
         """
-        Special calculation for transcritical CO2 cycle
+        Calculate transcritical CO2 cycle performance using CoolProp
         """
+        fluid = "CarbonDioxide"
+        T_evap = t_evap + 273.15
+        T_gc_out = t_gas_cooler + 273.15
+        
         # Evaporator pressure (subcritical)
-        p_evap = self.calculate_saturation_pressure(t_evap, Refrigerant.CO2)
+        P_evap = PropsSI('P', 'T', T_evap, 'Q', 1, fluid)
         
-        # Gas cooler pressure (transcritical) - optimized for COP
-        # Typical correlation for optimal high pressure
-        p_opt = 2.778 * t_gas_cooler + 34.4  # bar
-        p_gas_cooler = min(p_opt, 120)  # Limit to typical maximum
+        # Optimal gas cooler pressure for transcritical CO2
+        # Correlation from Liao et al. (2000)
+        P_gc_opt = 2.778e5 * (T_gc_out - 273.15) + 3.44e6  # Pa
+        P_gc = min(P_gc_opt, 12e6)  # Limit to 120 bar
         
-        # Pressure ratio
-        pressure_ratio = p_gas_cooler / p_evap
+        # State 1: Compressor inlet
+        T1 = T_evap + superheat
+        h1 = PropsSI('H', 'T', T1, 'P', P_evap, fluid)
+        s1 = PropsSI('S', 'T', T1, 'P', P_evap, fluid)
         
-        # Simplified transcritical COP correlation
-        # Based on typical CO2 heat pump performance
-        cop_base = 4.5 - 0.04 * (t_gas_cooler - t_evap)
+        # State 2s: Isentropic compression
+        h2s = PropsSI('H', 'S', s1, 'P', P_gc, fluid)
         
-        # Adjust for pressure ratio
-        cop_real = cop_base * (1 - 0.1 * math.log(pressure_ratio))
+        # State 2: Actual compression
+        h2 = h1 + (h2s - h1) / self.compressor_efficiency
+        T2 = PropsSI('T', 'H', h2, 'P', P_gc, fluid)
         
-        # Apply efficiencies
-        cop_real *= self.mechanical_efficiency * self.heat_exchanger_effectiveness
+        # State 3: Gas cooler outlet
+        h3 = PropsSI('H', 'T', T_gc_out, 'P', P_gc, fluid)
         
-        # Theoretical maximum (modified Carnot for transcritical)
-        t_evap_k = t_evap + 273.15
-        t_gas_k = t_gas_cooler + 273.15
-        cop_carnot = t_gas_k / (t_gas_k - t_evap_k) * 0.6  # Reduced due to transcritical
+        # State 4: After expansion
+        h4 = h3
+        T4 = PropsSI('T', 'H', h4, 'P', P_evap, fluid)
+        x4 = PropsSI('Q', 'H', h4, 'P', P_evap, fluid)
+        
+        # Performance
+        w_comp = (h2 - h1) / 1000  # kJ/kg
+        q_gc = (h2 - h3) / 1000  # kJ/kg
+        q_evap = (h1 - h4) / 1000  # kJ/kg
+        
+        COP_heating = q_gc / w_comp
+        COP_heating_real = COP_heating * self.mechanical_efficiency * self.heat_exchanger_effectiveness
+        
+        # Modified Carnot COP for transcritical
+        T_m = (T2 + T_gc_out) / 2  # Mean heat rejection temperature
+        COP_carnot_trans = T_m / (T_m - T_evap)
         
         return {
-            'cop_real': cop_real,
-            'cop_carnot': cop_carnot,
-            'carnot_efficiency': cop_real / cop_carnot if cop_carnot > 0 else 0,
-            'pressure_ratio': pressure_ratio,
-            'evaporator_pressure': p_evap,
-            'gas_cooler_pressure': p_gas_cooler,
-            'discharge_temp': t_gas_cooler + 20  # Approximate
+            'cop_heating': COP_heating_real,
+            'cop_cooling': (q_evap / w_comp) * self.mechanical_efficiency * self.heat_exchanger_effectiveness,
+            'cop_carnot': COP_carnot_trans,
+            'carnot_efficiency': COP_heating_real / COP_carnot_trans,
+            'pressure_ratio': P_gc / P_evap,
+            'evaporator_pressure': P_evap / 1e5,
+            'gas_cooler_pressure': P_gc / 1e5,
+            'discharge_temp': T2 - 273.15,
+            'compressor_work': w_comp,
+            'heating_capacity': q_gc,
+            'cooling_capacity': q_evap,
+            'vapor_quality_after_expansion': x4,
+            'operation_mode': 'Transcritical'
         }
     
     def calculate_system_performance(self, heat_source: HeatSource, refrigerant: Refrigerant,
@@ -243,65 +213,60 @@ class HeatPumpCalculator:
                                    ambient_temp: float = 10) -> Dict[str, any]:
         """
         Calculate complete system performance
-        
-        Parameters:
-        heat_source: Type of heat source
-        refrigerant: Refrigerant type
-        district_heating_supply_temp: DH supply temperature in °C
-        district_heating_return_temp: DH return temperature in °C
-        ambient_temp: Ambient temperature in °C
-        
-        Returns: Complete performance analysis
         """
         # Get heat source temperatures
         source_min, source_max = self.get_heat_source_temp(heat_source, ambient_temp)
         source_avg = (source_min + source_max) / 2
         
-        # Set evaporator temperature (typically 5-10K below source)
+        # Set evaporator temperature (5-10K approach)
         t_evap = source_avg - 7
         
-        # Set condenser temperature (typically 5-10K above sink)
+        # Set condenser temperature (5-10K approach)
         t_cond = district_heating_supply_temp + 5
         
         try:
+            # Get refrigerant critical temperature
+            T_crit = PropsSI('Tcrit', refrigerant.value) - 273.15
+            
             # Calculate COP
             performance = self.calculate_cop_real(t_evap, t_cond, refrigerant)
             
             # Add system-level information
             performance.update({
                 'heat_source': heat_source.value,
-                'refrigerant': REFRIGERANT_PROPERTIES[refrigerant].name,
+                'refrigerant': f"{refrigerant.name} ({refrigerant.value})",
                 'source_temp_range': f"{source_min:.1f} - {source_max:.1f}°C",
                 'evaporator_temp': t_evap,
                 'condenser_temp': t_cond,
+                'critical_temp': T_crit,
                 'dh_supply_temp': district_heating_supply_temp,
                 'dh_return_temp': district_heating_return_temp,
                 'temp_lift': t_cond - t_evap,
-                'status': 'OK'
+                'status': 'OK',
+                'operation_mode': 'Transcritical' if t_cond >= T_crit else 'Subcritical'
             })
             
-        except ValueError as e:
-            # Handle infeasible conditions
+        except Exception as e:
             performance = {
                 'heat_source': heat_source.value,
-                'refrigerant': REFRIGERANT_PROPERTIES[refrigerant].name,
+                'refrigerant': f"{refrigerant.name} ({refrigerant.value})",
                 'status': 'ERROR',
                 'error_message': str(e),
-                'cop_real': 0,
+                'cop_heating': 0,
                 'cop_carnot': 0
             }
         
         return performance
 
 
-# Example usage and testing
+# Example usage
 def main():
     calculator = HeatPumpCalculator()
     
-    print("Heat Pump COP Calculator")
-    print("=" * 60)
+    print("Heat Pump COP Calculator with CoolProp")
+    print("=" * 80)
     
-    # Test different configurations
+    # Test configurations
     test_configs = [
         (HeatSource.AIR, Refrigerant.PROPANE, 70, 40, 5),
         (HeatSource.WASTEWATER, Refrigerant.AMMONIA, 70, 40, 10),
@@ -311,9 +276,10 @@ def main():
     ]
     
     for source, refrigerant, dh_supply, dh_return, ambient in test_configs:
-        print(f"\nConfiguration:")
+        print(f"\n{'='*80}")
+        print(f"Configuration:")
         print(f"  Heat Source: {source.value}")
-        print(f"  Refrigerant: {refrigerant.value}")
+        print(f"  Refrigerant: {refrigerant.name}")
         print(f"  District Heating: {dh_supply}/{dh_return}°C")
         print(f"  Ambient Temperature: {ambient}°C")
         
@@ -322,18 +288,33 @@ def main():
         )
         
         if result['status'] == 'OK':
-            print(f"\nResults:")
+            print(f"\nOperating Conditions:")
             print(f"  Source Temperature Range: {result['source_temp_range']}")
             print(f"  Evaporator/Condenser Temp: {result['evaporator_temp']:.1f}/{result['condenser_temp']:.1f}°C")
             print(f"  Temperature Lift: {result['temp_lift']:.1f}K")
+            print(f"  Operation Mode: {result['operation_mode']}")
+            
+            print(f"\nPressures:")
+            print(f"  Evaporator Pressure: {result['evaporator_pressure']:.2f} bar")
+            print(f"  Condenser Pressure: {result['condenser_pressure']:.2f} bar")
             print(f"  Pressure Ratio: {result['pressure_ratio']:.2f}")
-            print(f"  COP (Real): {result['cop_real']:.2f}")
-            print(f"  COP (Carnot): {result['cop_carnot']:.2f}")
+            
+            print(f"\nPerformance:")
+            print(f"  COP Heating (Real): {result['cop_heating']:.2f}")
+            print(f"  COP Cooling (Real): {result['cop_cooling']:.2f}")
+            print(f"  COP Carnot: {result['cop_carnot']:.2f}")
             print(f"  Carnot Efficiency: {result['carnot_efficiency']:.1%}")
+            
+            print(f"\nThermodynamic Properties:")
+            print(f"  Discharge Temperature: {result['discharge_temp']:.1f}°C")
+            print(f"  Compressor Work: {result['compressor_work']:.1f} kJ/kg")
+            print(f"  Heating Capacity: {result['heating_capacity']:.1f} kJ/kg")
+            print(f"  Vapor Quality after Expansion: {result['vapor_quality_after_expansion']:.2f}")
+            
+            if 'volumetric_heating_capacity' in result:
+                print(f"  Volumetric Heating Capacity: {result['volumetric_heating_capacity']:.3f} MW/m³")
         else:
             print(f"\nError: {result['error_message']}")
-        
-        print("-" * 60)
 
 
 if __name__ == "__main__":
