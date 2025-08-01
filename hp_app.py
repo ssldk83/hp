@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import numpy as np
 
@@ -75,21 +74,3 @@ else:
     In a full implementation, integrate with libraries like CoolProp for actual fluid properties 
     (e.g., enthalpies in a vapor compression cycle). This app provides a good thermodynamic approximation.
     """)
-```
-
-To run this Streamlit app on the Streamlit website (now called Streamlit Community Cloud):
-
-1. **Local Testing First:**
-   - Save the code above in a file named `app.py`.
-   - Install Streamlit locally if you haven't: Open a terminal and run `pip install streamlit`.
-   - Run the app: In the terminal, navigate to the directory with `app.py` and run `streamlit run app.py`. This will open the app in your browser for testing.
-
-2. **Deploy to Streamlit Community Cloud:**
-   - Create a GitHub account if you don't have one (it's free).
-   - Create a new public repository on GitHub.
-   - Upload `app.py` to the repository. If needed, add a `requirements.txt` file with `streamlit` and `numpy` (though Streamlit Cloud handles basics, it's good practice: contents: `streamlit\nnumpy`).
-   - Go to https://share.streamlit.io/ and sign in with GitHub.
-   - Click "New app" or "Deploy an app", select your repository, branch (main), and file path (`app.py`).
-   - Click "Deploy". The app will build and deploy for free. You'll get a public URL like `https://yourappname.streamlit.app` to share and run it online.
-
-This setup allows interactive input and precise Lorenz-based calculations without Excel. If you need more advanced fluid property integration, consider adding CoolProp via pip in your local environment (but note: Streamlit Cloud supports it if listed in requirements.txt).
