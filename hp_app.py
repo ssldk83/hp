@@ -3,7 +3,7 @@ import numpy as np
 import plotly.graph_objects as go
 from CoolProp.CoolProp import PropsSI
 from tespy.networks import Network
-from tespy.components import Compressor, Valve, HeatExchangerSimple, CycleCloser
+from tespy.components import Compressor, Valve, SimpleHeatExchanger, CycleCloser
 from tespy.connections import Connection
 from tespy.tools import CharLine
 
@@ -34,11 +34,11 @@ nw = Network(
     m_unit="kg / s"
 )
 
-# Components
+# Components (updated to use SimpleHeatExchanger)
 comp = Compressor("Compressor")
-cond = HeatExchangerSimple("Condenser")
+cond = SimpleHeatExchanger("Condenser")
 val = Valve("Expansion Valve")
-eva = HeatExchangerSimple("Evaporator")
+eva = SimpleHeatExchanger("Evaporator")
 cc = CycleCloser("Cycle Closer")
 
 # Connections
@@ -145,7 +145,6 @@ fig.update_layout(
     xaxis_title="Enthalpy (kJ/kg)",
     yaxis_title="Temperature (°C)",
     showlegend=True,
-    grid=dict(rows=1, columns=1),
     xaxis=dict(showgrid=True),
     yaxis=dict(showgrid=True),
     template="plotly_white"
