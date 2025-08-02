@@ -58,6 +58,18 @@ def run_simulation(working_fluid, sink_return, sink_supply, source_in, source_ou
     c17.set_attr(T=source_in, fluid={"water": 1})
     c19.set_attr(T=source_out, p=1.013)
 
+    # source sink
+    src = Source("wastewater in")
+    sink = Sink("wastewater out")
+    he1 = HeatExchanger("evaporator")
+
+    c17 = Connection(src, "out1", he1, "in1", label="17")
+    c18 = Connection(he1, "out1", sink, "in1", label="18")
+
+    nw.add_conns(c17, c18)
+    c17.set_attr(T=source_in, fluid={"water": 1})
+    c18.set_attr(T=source_out, p=1.013)
+
     # Final steps
     q_out = cons.Q.val
     w_in = cp1.P.val + cp2.P.val + rp.P.val + hsp.P.val
