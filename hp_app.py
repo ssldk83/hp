@@ -1,6 +1,6 @@
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 from CoolProp.CoolProp import PropsSI
 from tespy.networks import Network
 from tespy.components import Compressor, Valve, HeatExchangerSimple, CycleCloser
@@ -11,7 +11,7 @@ from tespy.tools import CharLine
 st.title("Heat Pump Heat and Mass Balance Calculator with T-H Diagram")
 
 # User inputs
-fluid = st.selectbox("Natural Refrigerant", ["Ammonia", "Propane"])  # Limited to subcritical natural fluids for simplicity
+fluid = st.selectbox("Natural Refrigerant", ["Ammonia", "Propane"])  # Limited to subcritical natural fluids
 T_evap_C = st.number_input("Evaporator Saturation Temperature (°C)", value=-10.0)
 T_cond_C = st.number_input("Condenser Saturation Temperature (°C)", value=40.0)
 superheat_K = st.number_input("Superheat (K)", value=5.0)
@@ -120,27 +120,36 @@ h_liq = [PropsSI("H", "T", t, "Q", 0, fluid) / 1000 for t in Tsat_K]
 h_vap = [PropsSI("H", "T", t, "Q", 1, fluid) / 1000 for t in Tsat_K]
 Tsat_C = [t - 273.15 for t in Tsat_K]
 
-# Plot
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.plot(h_liq, Tsat_C, "k-", label="Saturation Liquid")
-ax.plot(h_vap, Tsat_C, "k-", label="Saturation Vapor")
+# Create Plotly figure
+fig = go.Figure()
+
+# Saturation curves
+fig.add_trace(go.Scatter(x=h_liq, y=Tsat_C, mode='lines', name='Saturation Liquid', line=dict(color='black')))
+fig.add_trace(go.Scatter(x=h_vap, y=Tsat_C, mode='lines', name='Saturation Vapor', line=dict(color='black')))
 
 # Cycle processes
-ax.plot([h4, h1], [T4, T1], "b-", label="Evaporation")
-ax.plot([h1, h2], [T1, T2], "r-", label="Compression")
-ax.plot([h2, h3], [T2, T3], "g-", label="Condensation")
-ax.plot([h3, h4], [T3, T4], "m-", label="Expansion")
+fig.add_trace(go.Scatter(x=[h4, h1], y=[T4, T1], mode='lines', name='Evaporation', line=dict(color='blue')))
+fig.add_trace(go.Scatter(x=[h1, h2], y=[T1, T2], mode='lines', name='Compression', line=dict(color='red')))
+fig.add_trace(go.Scatter(x=[h2, h3], y=[T2, T3], mode='lines', name='Condensation', line=dict(color='green')))
+fig.add_trace(go.Scatter(x=[h3, h4], y=[T3, T4], mode='lines', name='Expansion', line=dict(color='magenta')))
 
 # Point markers
-ax.plot(h1, T1, "bo", label="Point 1")
-ax.plot(h2, T2, "ro", label="Point 2")
-ax.plot(h3, T3, "go", label="Point 3")
-ax.plot(h4, T4, "mo", label="Point 4")
+fig.add_trace(go.Scatter(x=[h1], y=[T1], mode='markers', name='Point 1', marker=dict(color='blue', size=10)))
+fig.add_trace(go.Scatter(x=[h2], y=[T2], mode='markers', name='Point 2', marker=dict(color='red', size=10)))
+fig.add_trace(go.Scatter(x=[h3], y=[T3], mode='markers', name='Point 3', marker=dict(color='green', size=10)))
+fig.add_trace(go.Scatter(x=[h4], y=[T4], mode='markers', name='Point 4', marker=dict(color='magenta', size=10)))
 
-ax.set_xlabel("Enthalpy (kJ/kg)")
-ax.set_ylabel("Temperature (°C)")
-ax.set_title(f"T-H Diagram for {fluid} Heat Pump Cycle")
-ax.legend()
-ax.grid(True)
+# Layout
+fig.update_layout(
+    title=f"T-H Diagram for {fluid} Heat Pump Cycle",
+    xaxis_title="Enthalpy (kJ/kg)",
+    yaxis_title="Temperature (°C)",
+    showlegend=True,
+    grid=dict(rows=1, columns=1),
+    xaxis=dict(showgrid=True),
+    yaxis=dict(showgrid=True),
+    template="plotly_white"
+)
 
-st.pyplot(fig)
+# Display plot
+st.plotly_chart(fig, use_container_width=True)
