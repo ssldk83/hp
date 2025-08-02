@@ -78,15 +78,10 @@ except Exception as e:
     st.error(f"Simulation failed: {e}")
     st.stop()
 
-# Retrieve results
-h = [conn.h.val for conn in [c1, c2, c3, c4]]
+# Retrieve results (TESPy provides enthalpy in J/kg, convert to kJ/kg explicitly)
+h = [conn.h.val / 1000 for conn in [c1, c2, c3, c4]]
 T = [conn.T.val for conn in [c1, c2, c3, c4]]
 p = [conn.p.val for conn in [c1, c2, c3, c4]]
-
-# Print all variables for debugging
-st.subheader("Debugging Information")
-for i, (hi, Ti, pi) in enumerate(zip(h, T, p), start=1):
-    st.write(f"Point {i}: Enthalpy = {hi:.2f} J/kg, Temperature = {Ti:.2f} K, Pressure = {pi:.2f} bar")
 
 # Heat balance
 q_evap = mass_flow * (h[0] - h[3])
@@ -95,6 +90,11 @@ w_comp = mass_flow * (h[1] - h[0])
 
 cop_heat = q_cond / w_comp
 cop_cool = q_evap / w_comp
+
+# Debugging information
+st.subheader("Debugging Information")
+for i, (hi, Ti, pi) in enumerate(zip(h, T, p), start=1):
+    st.write(f"Point {i}: Enthalpy = {hi:.2f} kJ/kg, Temperature = {Ti:.2f} °C, Pressure = {pi:.2f} bar")
 
 # Display results
 st.subheader("Heat and Mass Balance Results")
