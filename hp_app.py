@@ -26,235 +26,88 @@ if T_evap_C >= T_cond_C:
     st.error("Evaporator temperature must be lower than condenser temperature.")
     st.stop()
 
-# Calculate saturation pressures using CoolProp (in bar)
+# Calculate saturation pressures (bar)
+T_evap_K = T_evap_C + 273.15
+T_cond_K = T_cond_C + 273.15
+
 try:
-    T_evap_K = T_evap_C + 273.15
-    T_cond_K = T_cond_C + 273.15
     P_evap_bar = PropsSI('P', 'T', T_evap_K, 'Q', 0, fluid) / 1e5
     P_cond_bar = PropsSI('P', 'T', T_cond_K, 'Q', 0, fluid) / 1e5
-    
-    # Check if conditions are subcritical
+
     T_crit = PropsSI('TCRIT', fluid)
     if T_cond_K >= T_crit:
-        st.error(f"Condenser temperature too high. Critical temperature for {fluid_display} is {T_crit-273.15:.1f}°C")
+        st.error(f"Condenser temperature too high. Critical temperature for {fluid_display} is {T_crit - 273.15:.1f}°C")
         st.stop()
-        
 except Exception as e:
     st.error(f"Error calculating fluid properties: {e}")
     st.stop()
 
-# Set up TESPy network
-try:
-    nw = Network(fluids=[fluid])
-    nw.set_attr(T_unit='C', p_unit='bar', h_unit='kJ/kg', m_unit='kg/s')
-except:
-    # Fallback: create network without unit specifications
-    nw = Network(fluids=[fluid])
+# TESPy network setup
+nw = Network(fluids=[fluid], T_unit='C', p_unit='bar', h_unit='kJ / kg', m_unit='kg / s')
 
 # Components
 comp = Compressor('compressor')
 cond = SimpleHeatExchanger('condenser')
-val = Valve('expansion_valve')  
+val = Valve('expansion_valve')
 eva = SimpleHeatExchanger('evaporator')
 cc = CycleCloser('cycle_closer')
 
 # Connections
 c1 = Connection(eva, 'out1', cc, 'in1')
-c2 = Connection(cc, 'out1', comp, 'in1') 
+c2 = Connection(cc, 'out1', comp, 'in1')
 c3 = Connection(comp, 'out1', cond, 'in1')
 c4 = Connection(cond, 'out1', val, 'in1')
 c5 = Connection(val, 'out1', eva, 'in1')
-
 nw.add_conns(c1, c2, c3, c4, c5)
 
-# Set component parameters
+# Set parameters
 comp.set_attr(eta_s=eta_s_comp)
-cond.set_attr(pr=1)  # No pressure drop
-eva.set_attr(pr=1)   # No pressure drop
+cond.set_attr(pr=1)
+eva.set_attr(pr=1)
 
-# Set connection states  
 c1.set_attr(fluid={fluid: 1}, p=P_evap_bar, T=T_evap_C + superheat_K, m=mass_flow)
 c3.set_attr(p=P_cond_bar)
 c4.set_attr(T=T_cond_C - subcool_K)
 
-# Solve the network
+# Solve network
 try:
-    nw.solve(mode="design")
+    nw.solve('design')
+    nw.print_results()
     st.success("Simulation converged successfully!")
 except Exception as e:
     st.error(f"Simulation failed: {e}")
-    st.error("Try adjusting the input parameters (temperatures, superheat, subcooling)")
     st.stop()
 
-# Extract properties for points (all values will be in SI units by default)
-# Point 1: Evaporator outlet (superheated vapor)
-h1 = c1.h.val  # J/kg - convert to kJ/kg
-T1 = c1.T.val  # K - convert to °C  
-p1 = c1.p.val  # Pa - convert to bar
+# Retrieve results
+h = [conn.h.val for conn in [c1, c2, c3, c4]]
+T = [conn.T.val for conn in [c1, c2, c3, c4]]
+p = [conn.p.val for conn in [c1, c2, c3, c4]]
 
-# Point 2: Compressor outlet (superheated vapor)  
-h2 = c2.h.val  # J/kg
-T2 = c2.T.val  # K
-p2 = c2.p.val  # Pa
+# Heat balance
+q_evap = mass_flow * (h[0] - h[3])
+q_cond = mass_flow * (h[1] - h[2])
+w_comp = mass_flow * (h[1] - h[0])
 
-# Point 3: Condenser outlet (subcooled liquid)
-h3 = c3.h.val  # J/kg  
-T3 = c3.T.val  # K
-p3 = c3.p.val  # Pa
-
-# Point 4: Expansion valve outlet (two-phase)
-h4 = c4.h.val  # J/kg
-T4 = c4.T.val  # K  
-p4 = c4.p.val  # Pa
-
-# Convert units if needed (TESPy default is SI units)
-if h1 > 1000:  # Values are in J/kg, convert to kJ/kg
-    h1, h2, h3, h4 = h1/1000, h2/1000, h3/1000, h4/1000
-    
-if T1 > 100:  # Values are in K, convert to °C
-    T1, T2, T3, T4 = T1-273.15, T2-273.15, T3-273.15, T4-273.15
-    
-if p1 > 1000:  # Values are in Pa, convert to bar
-    p1, p2, p3, p4 = p1/1e5, p2/1e5, p3/1e5, p4/1e5
-
-# Calculate heat and mass balance
-q_evap_specific = h1 - h4  # kJ/kg (heat absorbed)
-q_cond_specific = h2 - h3  # kJ/kg (heat rejected)
-w_comp_specific = h2 - h1  # kJ/kg (work input)
-
-q_evap_total = mass_flow * q_evap_specific  # kW
-q_cond_total = mass_flow * q_cond_specific  # kW
-w_comp_total = mass_flow * w_comp_specific  # kW
-
-cop_heating = q_cond_total / w_comp_total if w_comp_total > 0 else 0
-cop_cooling = q_evap_total / w_comp_total if w_comp_total > 0 else 0
-
-# Energy balance check
-energy_balance = q_evap_total + w_comp_total - q_cond_total
+cop_heat = q_cond / w_comp
+cop_cool = q_evap / w_comp
 
 # Display results
 st.subheader("Heat and Mass Balance Results")
-col1, col2 = st.columns(2)
+st.write(f"Evaporator Heat: {q_evap:.2f} kW")
+st.write(f"Condenser Heat: {q_cond:.2f} kW")
+st.write(f"Compressor Work: {w_comp:.2f} kW")
+st.write(f"Heating COP: {cop_heat:.2f}")
+st.write(f"Cooling COP: {cop_cool:.2f}")
 
-with col1:
-    st.write(f"**Evaporator Heat Absorption:** {q_evap_total:.2f} kW")
-    st.write(f"**Condenser Heat Rejection:** {q_cond_total:.2f} kW")
-    st.write(f"**Compressor Work Input:** {w_comp_total:.2f} kW")
+# T-H Diagram
+Ts = np.linspace(T_evap_K - 30, T_cond_K + 30, 100)
+h_l = [PropsSI('H', 'T', T, 'Q', 0, fluid) / 1e3 for T in Ts]
+h_v = [PropsSI('H', 'T', T, 'Q', 1, fluid) / 1e3 for T in Ts]
 
-with col2:
-    st.write(f"**Heating COP:** {cop_heating:.2f}")
-    st.write(f"**Cooling COP:** {cop_cooling:.2f}")
-    st.write(f"**Energy Balance Error:** {energy_balance:.3f} kW")
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=h_l, y=Ts - 273.15, mode='lines', name='Saturated Liquid'))
+fig.add_trace(go.Scatter(x=h_v, y=Ts - 273.15, mode='lines', name='Saturated Vapor'))
+fig.add_trace(go.Scatter(x=h + [h[0]], y=[t - 273.15 for t in T] + [T[0] - 273.15], mode='lines+markers', name='Cycle'))
 
-st.subheader("Cycle Point Properties")
-data = {
-    "Point": ["1 (Evap Out)", "2 (Comp Out)", "3 (Cond Out)", "4 (Exp Val Out)"],
-    "Temperature (°C)": [f"{T1:.1f}", f"{T2:.1f}", f"{T3:.1f}", f"{T4:.1f}"],
-    "Pressure (bar)": [f"{p1:.2f}", f"{p2:.2f}", f"{p3:.2f}", f"{p4:.2f}"],
-    "Enthalpy (kJ/kg)": [f"{h1:.1f}", f"{h2:.1f}", f"{h3:.1f}", f"{h4:.1f}"]
-}
-st.table(data)
-
-# Generate T-H diagram
-st.subheader("T-H Diagram")
-
-try:
-    # Saturation curve using CoolProp
-    T_min = max(PropsSI("TMIN", fluid) + 5, T_evap_K - 50)  # Add safety margin
-    T_crit = PropsSI("TCRIT", fluid) - 5  # Subtract safety margin
-    T_max = min(T_crit, T_cond_K + 50)
-    
-    Tsat_K = np.linspace(T_min, T_max, 100)
-    h_liq = []
-    h_vap = []
-    Tsat_C = []
-    
-    for t in Tsat_K:
-        try:
-            h_l = PropsSI("H", "T", t, "Q", 0, fluid) / 1000  # Convert to kJ/kg
-            h_v = PropsSI("H", "T", t, "Q", 1, fluid) / 1000  # Convert to kJ/kg
-            h_liq.append(h_l)
-            h_vap.append(h_v)
-            Tsat_C.append(t - 273.15)
-        except:
-            continue  # Skip problematic points
-    
-    # Create Plotly figure
-    fig = go.Figure()
-    
-    # Saturation curves
-    fig.add_trace(go.Scatter(
-        x=h_liq, y=Tsat_C, 
-        mode='lines', name='Saturated Liquid', 
-        line=dict(color='black', width=2)
-    ))
-    fig.add_trace(go.Scatter(
-        x=h_vap, y=Tsat_C, 
-        mode='lines', name='Saturated Vapor', 
-        line=dict(color='black', width=2)
-    ))
-    
-    # Cycle processes
-    fig.add_trace(go.Scatter(
-        x=[h4, h1], y=[T4, T1], 
-        mode='lines+markers', name='4→1 Evaporation', 
-        line=dict(color='blue', width=3),
-        marker=dict(size=8)
-    ))
-    fig.add_trace(go.Scatter(
-        x=[h1, h2], y=[T1, T2], 
-        mode='lines+markers', name='1→2 Compression', 
-        line=dict(color='red', width=3),
-        marker=dict(size=8)
-    ))
-    fig.add_trace(go.Scatter(
-        x=[h2, h3], y=[T2, T3], 
-        mode='lines+markers', name='2→3 Condensation', 
-        line=dict(color='green', width=3),
-        marker=dict(size=8)
-    ))
-    fig.add_trace(go.Scatter(
-        x=[h3, h4], y=[T3, T4], 
-        mode='lines+markers', name='3→4 Expansion', 
-        line=dict(color='orange', width=3),
-        marker=dict(size=8)
-    ))
-    
-    # Point labels
-    fig.add_annotation(x=h1, y=T1, text="1", showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2)
-    fig.add_annotation(x=h2, y=T2, text="2", showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2)
-    fig.add_annotation(x=h3, y=T3, text="3", showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2)
-    fig.add_annotation(x=h4, y=T4, text="4", showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2)
-    
-    # Layout
-    fig.update_layout(
-        title=f"T-H Diagram for {fluid_display} Heat Pump Cycle",
-        xaxis_title="Enthalpy (kJ/kg)",
-        yaxis_title="Temperature (°C)",
-        showlegend=True,
-        width=800,
-        height=600,
-        xaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray'),
-        yaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray'),
-        template="plotly_white"
-    )
-    
-    # Display plot
-    st.plotly_chart(fig, use_container_width=True)
-    
-except Exception as e:
-    st.error(f"Error generating T-H diagram: {e}")
-
-# Additional information
-st.subheader("System Information")
-st.write(f"**Working Fluid:** {fluid_display} ({fluid})")
-st.write(f"**Pressure Ratio:** {p2/p1:.2f}")
-st.write(f"**Temperature Lift:** {T2-T1:.1f} K")
-
-# Performance metrics
-st.subheader("Performance Metrics")
-carnot_cop = T_cond_K / (T_cond_K - T_evap_K)
-carnot_efficiency = cop_heating / carnot_cop if carnot_cop > 0 else 0
-
-st.write(f"**Carnot COP (Heating):** {carnot_cop:.2f}")
-st.write(f"**Second Law Efficiency:** {carnot_efficiency:.1%}")
+fig.update_layout(title="T-H Diagram", xaxis_title="Enthalpy (kJ/kg)", yaxis_title="Temperature (°C)", template='plotly_white')
+st.plotly_chart(fig, use_container_width=True)
