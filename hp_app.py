@@ -14,30 +14,28 @@ from tespy.tools.characteristics import CharLine
 from CoolProp.CoolProp import PropsSI
 from tempfile import NamedTemporaryFile
 
-# --- Utility ---
+# ---------------------- Utility ----------------------
 def json_with_nan_fix(obj):
     return json.loads(json.dumps(obj, default=lambda x: None))
 
-# --- Fluid default T/p values ---
 fluid_defaults = {
     "NH3": {"cond_T": 95, "inlet_T": 170},
     "Propane": {"cond_T": 50, "inlet_T": 120},
     "Isobutane": {"cond_T": 45, "inlet_T": 110}
 }
 
-# --- Simulation ---
+# ---------------------- Simulation ----------------------
 def run_simulation(working_fluid):
     defaults = fluid_defaults[working_fluid]
     nw = Network(T_unit="C", p_unit="bar", h_unit="kJ / kg", m_unit="kg / s")
 
-    # Sources, sinks, and basic components
+    # Main loop components (same as before)
     c_in = Source("refrigerant in")
     cons_closer = CycleCloser("consumer cycle closer")
     va = Sink("valve")
     cd = Condenser("condenser")
     rp = Pump("recirculation pump")
     cons = SimpleHeatExchanger("consumer")
-
     c0 = Connection(c_in, "out1", cd, "in1", label="0")
     c1 = Connection(cd, "out1", va, "in1", label="1")
     c20 = Connection(cons_closer, "out1", rp, "in1", label="20")
@@ -49,7 +47,6 @@ def run_simulation(working_fluid):
     cd.set_attr(pr1=0.99, pr2=0.99)
     rp.set_attr(eta_s=0.75)
     cons.set_attr(pr=0.99)
-
     p_cond = PropsSI("P", "Q", 1, "T", 273.15 + defaults["cond_T"], working_fluid) / 1e5
     c0.set_attr(T=defaults["inlet_T"], p=p_cond, fluid={working_fluid: 1})
     c20.set_attr(T=60, p=2, fluid={"water": 1})
@@ -57,7 +54,6 @@ def run_simulation(working_fluid):
     cons.set_attr(Q=-230e3)
     nw.solve("design")
 
-    # Evaporator
     amb_in = Source("source ambient")
     amb_out = Sink("sink ambient")
     va = Valve("valve")
@@ -65,7 +61,6 @@ def run_simulation(working_fluid):
     ev = HeatExchanger("evaporator")
     su = HeatExchanger("superheater")
     cp1 = Sink("compressor 1")
-
     nw.del_conns(c1)
     c1 = Connection(cd, "out1", va, "in1", label="1")
     c2 = Connection(va, "out1", dr, "in1", label="2")
@@ -87,7 +82,6 @@ def run_simulation(working_fluid):
     c19.set_attr(T=9, p=1.013)
     nw.solve("design")
 
-    # Compressors and loop
     cp1 = Compressor("compressor 1")
     cp2 = Compressor("compressor 2")
     ic = HeatExchanger("intermittent cooling")
@@ -145,7 +139,6 @@ def run_simulation(working_fluid):
     hsp.set_attr(design=["eta_s"], offdesign=["eta_s_char"])
     cons.set_attr(design=["pr"], offdesign=["zeta"])
     cd.set_attr(design=["pr2", "ttd_u"], offdesign=["zeta2", "kA_char"])
-
     kA_char1 = CharLine([0, 1], [0, 1])
     kA_char2 = CharLine([0, 1], [0, 1])
     ev.set_attr(kA_char1=kA_char1, kA_char2=kA_char2,
@@ -166,12 +159,12 @@ def run_simulation(working_fluid):
     results = {k: v.to_dict() for k, v in nw.results.items()}
     return cop, results
 
-# -------------------- Streamlit App --------------------
+# ---------------------- Streamlit App ----------------------
 
 st.set_page_config(page_title="TESPy Heat Pump", layout="wide")
+st.title("TESPy Heat Pump Simulation")
 
-# Sidebar fluid selector
-fluid_label = st.sidebar.selectbox("Working Fluid", ["Ammonia (NH₃)", "Propane (R290)", "Isobutane (R600a)"])
+fluid_label = st.selectbox("Select Working Fluid", ["Ammonia (NH₃)", "Propane (R290)", "Isobutane (R600a)"])
 fluid_map = {
     "Ammonia (NH₃)": "NH3",
     "Propane (R290)": "Propane",
@@ -179,26 +172,23 @@ fluid_map = {
 }
 working_fluid = fluid_map[fluid_label]
 
-# Layout with columns
-col1, col2 = st.columns([2, 1])
+with st.spinner(f"Running TESPy simulation for {fluid_label}..."):
+    cop, results = run_simulation(working_fluid)
 
-with col1:
-    st.title("TESPy Heat Pump Simulation")
-    with st.spinner(f"Running simulation for {fluid_label}..."):
-        cop, results = run_simulation(working_fluid)
-    st.success("Simulation completed!")
-    st.metric(label="Coefficient of Performance (COP)", value=f"{cop:.2f}")
+st.success("Simulation completed successfully.")
+st.metric(label="Coefficient of Performance (COP)", value=f"{cop:.2f}")
 
-    for section, data in results.items():
-        st.subheader(section.title())
-        df = pd.DataFrame.from_dict(data, orient="index")
-        st.dataframe(df.style.format(precision=3), use_container_width=True)
+# Results
+for section, data in results.items():
+    st.subheader(section.title())
+    df = pd.DataFrame.from_dict(data, orient="index")
+    st.dataframe(df.style.format(precision=3), use_container_width=True)
 
-with col2:
-    st.markdown("### Heat Pump Schematic")
-    try:
-        with open("hp_sample.svg", "r") as f:
-            svg_code = f.read()
-        components.html(svg_code, height=600)
-    except FileNotFoundError:
-        st.warning("SVG file `hp_sample.svg` not found.")
+# SVG Schematic (inline after results)
+st.subheader("Heat Pump Schematic")
+try:
+    with open("hp_sample.svg", "r") as f:
+        svg_code = f.read()
+    components.html(svg_code, height=600)
+except FileNotFoundError:
+    st.warning("SVG file `hp_sample.svg` not found.")
