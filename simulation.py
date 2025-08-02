@@ -3,7 +3,6 @@ from tespy.components import (
     Sink, Source, Pump, HeatExchanger, Compressor, Valve, CycleCloser
 )
 from tespy.connections import Connection
-from tespy.tools import document_models
 from tespy.tools.characteristics import CharLine
 import numpy as np
 
