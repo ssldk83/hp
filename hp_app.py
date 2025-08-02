@@ -30,11 +30,11 @@ nw = Network(
     fluids=[fluid],
     T_unit="C",
     p_unit="bar",
-    h_unit="kj / kg",
-    m_unit="kg / s"
+    h_unit="kJ/kg",  # Fixed from "kj / kg" to "kJ/kg"
+    m_unit="kg/s"    # Fixed from "kg / s" to "kg/s"
 )
 
-# Components (updated to use SimpleHeatExchanger)
+# Components
 comp = Compressor("Compressor")
 cond = SimpleHeatExchanger("Condenser")
 val = Valve("Expansion Valve")
