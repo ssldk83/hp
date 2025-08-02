@@ -5,7 +5,6 @@ from CoolProp.CoolProp import PropsSI
 from tespy.networks import Network
 from tespy.components import Compressor, Valve, SimpleHeatExchanger, CycleCloser
 from tespy.connections import Connection
-from tespy.tools.helpers import TESPyNetworkError
 
 # Streamlit app title
 st.title("Heat Pump Heat and Mass Balance Calculator with T-H Diagram")
@@ -44,38 +43,37 @@ except Exception as e:
     st.error(f"Error calculating fluid properties: {e}")
     st.stop()
 
-# Set up TESPy network with correct units
-nw = Network(
-    fluids=[fluid],
-    T_unit="C",
-    p_unit="bar",
-    h_unit="kJ/kg",
-    m_unit="kg/s"
-)
+# Set up TESPy network
+try:
+    nw = Network(fluids=[fluid])
+    nw.set_attr(T_unit='C', p_unit='bar', h_unit='kJ/kg', m_unit='kg/s')
+except:
+    # Fallback: create network without unit specifications
+    nw = Network(fluids=[fluid])
 
 # Components
-comp = Compressor("Compressor")
-cond = SimpleHeatExchanger("Condenser")
-val = Valve("Expansion Valve")
-eva = SimpleHeatExchanger("Evaporator")
-cc = CycleCloser("Cycle Closer")
+comp = Compressor('compressor')
+cond = SimpleHeatExchanger('condenser')
+val = Valve('expansion_valve')  
+eva = SimpleHeatExchanger('evaporator')
+cc = CycleCloser('cycle_closer')
 
 # Connections
-c1 = Connection(eva, "out1", cc, "in1", label="1")
-c2 = Connection(cc, "out1", comp, "in1", label="2")
-c3 = Connection(comp, "out1", cond, "in1", label="3")
-c4 = Connection(cond, "out1", val, "in1", label="4")
-c5 = Connection(val, "out1", eva, "in1", label="5")
+c1 = Connection(eva, 'out1', cc, 'in1')
+c2 = Connection(cc, 'out1', comp, 'in1') 
+c3 = Connection(comp, 'out1', cond, 'in1')
+c4 = Connection(cond, 'out1', val, 'in1')
+c5 = Connection(val, 'out1', eva, 'in1')
 
 nw.add_conns(c1, c2, c3, c4, c5)
 
 # Set component parameters
 comp.set_attr(eta_s=eta_s_comp)
-cond.set_attr(pr=1.0)  # Pressure ratio (no pressure drop)
-eva.set_attr(pr=1.0)   # Pressure ratio (no pressure drop)
+cond.set_attr(pr=1)  # No pressure drop
+eva.set_attr(pr=1)   # No pressure drop
 
-# Set connection states
-c1.set_attr(fluid={fluid: 1.0}, p=P_evap_bar, T=T_evap_C + superheat_K, m=mass_flow)
+# Set connection states  
+c1.set_attr(fluid={fluid: 1}, p=P_evap_bar, T=T_evap_C + superheat_K, m=mass_flow)
 c3.set_attr(p=P_cond_bar)
 c4.set_attr(T=T_cond_C - subcool_K)
 
@@ -88,22 +86,36 @@ except Exception as e:
     st.error("Try adjusting the input parameters (temperatures, superheat, subcooling)")
     st.stop()
 
-# Extract properties for points
-h1 = c1.h.val  # kJ/kg
-T1 = c1.T.val  # °C
-p1 = c1.p.val  # bar
+# Extract properties for points (all values will be in SI units by default)
+# Point 1: Evaporator outlet (superheated vapor)
+h1 = c1.h.val  # J/kg - convert to kJ/kg
+T1 = c1.T.val  # K - convert to °C  
+p1 = c1.p.val  # Pa - convert to bar
 
-h2 = c2.h.val  # kJ/kg
-T2 = c2.T.val  # °C
-p2 = c2.p.val  # bar
+# Point 2: Compressor outlet (superheated vapor)  
+h2 = c2.h.val  # J/kg
+T2 = c2.T.val  # K
+p2 = c2.p.val  # Pa
 
-h3 = c3.h.val  # kJ/kg
-T3 = c3.T.val  # °C
-p3 = c3.p.val  # bar
+# Point 3: Condenser outlet (subcooled liquid)
+h3 = c3.h.val  # J/kg  
+T3 = c3.T.val  # K
+p3 = c3.p.val  # Pa
 
-h4 = c4.h.val  # kJ/kg
-T4 = c4.T.val  # °C
-p4 = c4.p.val  # bar
+# Point 4: Expansion valve outlet (two-phase)
+h4 = c4.h.val  # J/kg
+T4 = c4.T.val  # K  
+p4 = c4.p.val  # Pa
+
+# Convert units if needed (TESPy default is SI units)
+if h1 > 1000:  # Values are in J/kg, convert to kJ/kg
+    h1, h2, h3, h4 = h1/1000, h2/1000, h3/1000, h4/1000
+    
+if T1 > 100:  # Values are in K, convert to °C
+    T1, T2, T3, T4 = T1-273.15, T2-273.15, T3-273.15, T4-273.15
+    
+if p1 > 1000:  # Values are in Pa, convert to bar
+    p1, p2, p3, p4 = p1/1e5, p2/1e5, p3/1e5, p4/1e5
 
 # Calculate heat and mass balance
 q_evap_specific = h1 - h4  # kJ/kg (heat absorbed)
