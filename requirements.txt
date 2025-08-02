@@ -1,5 +1,4 @@
 streamlit
-pip install matplotlib
 CoolProp
 tespy
 numpy
