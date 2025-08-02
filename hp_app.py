@@ -78,15 +78,20 @@ except Exception as e:
     st.error(f"Simulation failed: {e}")
     st.stop()
 
-# Retrieve results
-h = [conn.h.val for conn in [c1, c2, c3, c4]]
+# Retrieve results with proper unit conversion (TESPy gives enthalpy in J/kg by default)
+h = [conn.h.val / 1000 for conn in [c1, c2, c3, c4]]  # Convert to kJ/kg explicitly
 T = [conn.T.val for conn in [c1, c2, c3, c4]]
 p = [conn.p.val for conn in [c1, c2, c3, c4]]
 
-# Heat balance
-q_evap = mass_flow * (h[0] - h[3])
-q_cond = mass_flow * (h[1] - h[2])
-w_comp = mass_flow * (h[1] - h[0])
+# Heat balance calculation (corrected units)
+q_evap = mass_flow * (h[0] - h[3])  # kW
+q_cond = mass_flow * (h[1] - h[2])  # kW
+w_comp = mass_flow * (h[1] - h[0])  # kW
+
+# Check for division by zero
+if abs(w_comp) < 1e-6:
+    st.error("Compressor work calculated as zero, check input parameters or enthalpy calculations.")
+    st.stop()
 
 cop_heat = q_cond / w_comp
 cop_cool = q_evap / w_comp
