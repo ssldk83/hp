@@ -9,7 +9,6 @@ from tespy.components import (Condenser, CycleCloser, SimpleHeatExchanger, Pump,
                               Source, Valve, Drum, HeatExchanger, Compressor, Splitter, Merge)
 from tespy.connections import Connection
 from tespy.tools.characteristics import CharLine
-from tespy.tools.characteristics import load_default_char as ldc
 from CoolProp.CoolProp import PropsSI
 from tempfile import NamedTemporaryFile
 
@@ -20,7 +19,7 @@ def run_simulation():
     working_fluid = "NH3"
     nw = Network(T_unit="C", p_unit="bar", h_unit="kJ / kg", m_unit="kg / s")
 
-    # Initial components setup
+    # Initial setup
     c_in = Source("refrigerant in")
     cons_closer = CycleCloser("consumer cycle closer")
     va = Sink("valve")
@@ -48,7 +47,7 @@ def run_simulation():
 
     nw.solve("design")
 
-    # Add evaporator system
+    # Evaporator system
     amb_in = Source("source ambient")
     amb_out = Sink("sink ambient")
     va = Valve("valve")
@@ -78,7 +77,7 @@ def run_simulation():
     c19.set_attr(T=9, p=1.013)
     nw.solve("design")
 
-    # Add compressor system
+    # Compressors and loop
     cp1 = Compressor("compressor 1")
     cp2 = Compressor("compressor 2")
     ic = HeatExchanger("intermittent cooling")
@@ -117,7 +116,7 @@ def run_simulation():
     c14.set_attr(T=30)
     nw.solve("design")
 
-    # Offdesign adjustments
+    # Design refinements
     c0.set_attr(p=None)
     cd.set_attr(ttd_u=5)
     c4.set_attr(T=None)
@@ -131,7 +130,7 @@ def run_simulation():
     c8.set_attr(h=None, Td_bp=4)
     nw.solve("design")
 
-    # Setup design/offdesign attributes
+    # Design and offdesign attributes
     cp1.set_attr(design=["eta_s"], offdesign=["eta_s_char"])
     cp2.set_attr(design=["eta_s"], offdesign=["eta_s_char"])
     rp.set_attr(design=["eta_s"], offdesign=["eta_s_char"])
@@ -139,43 +138,40 @@ def run_simulation():
     cons.set_attr(design=["pr"], offdesign=["zeta"])
     cd.set_attr(design=["pr2", "ttd_u"], offdesign=["zeta2", "kA_char"])
 
-    kA_char1 = ldc("heat exchanger", "kA_char1", "DEFAULT", CharLine)
-    kA_char2 = ldc("heat exchanger", "kA_char2", "EVAPORATING FLUID", CharLine)
-
-    ev.set_attr(design=["pr1", "ttd_l"], offdesign=["zeta1", "kA_char"],
-                kA_char1=kA_char1, kA_char2=kA_char2)
+    # ✅ FIX: Manual characteristic lines
+    kA_char1 = CharLine(x_vals=[0, 1], y_vals=[0, 1])
+    kA_char2 = CharLine(x_vals=[0, 1], y_vals=[0, 1])
+    ev.set_attr(kA_char1=kA_char1, kA_char2=kA_char2,
+                design=["pr1", "ttd_l"], offdesign=["zeta1", "kA_char"])
     su.set_attr(design=["pr1", "pr2", "ttd_u"], offdesign=["zeta1", "zeta2", "kA_char"])
     ic.set_attr(design=["pr1", "pr2"], offdesign=["zeta1", "zeta2", "kA_char"])
     c14.set_attr(design=["T"])
 
-    # Run offdesign
+    # Save & simulate offdesign
     with NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         design_path = tmp.name
         nw.save(design_path)
-
     nw.solve("offdesign", design_path=design_path)
     os.remove(design_path)
 
-    # Results and COP
+    # Results
     q_out = cons.Q.val
     w_in = cp1.P.val + cp2.P.val + rp.P.val + hsp.P.val
     cop = abs(q_out) / w_in if w_in else None
-
     results = {k: v.to_dict() for k, v in nw.results.items()}
     return cop, results
 
-# ---- Streamlit UI ----
+# --- Streamlit UI ---
 st.title("TESPy NH₃ Heat Pump Simulation")
 
 with st.spinner("Running TESPy simulation..."):
     cop, results = run_simulation()
 
-st.success("Simulation completed!")
+st.success("Simulation completed successfully!")
+st.markdown(f"### 💡 COP: `{cop:.2f}`")
 
-st.markdown(f"### ⚙️ Coefficient of Performance (COP): `{cop:.2f}`")
-
-# Show result tables
-for key, res_dict in results.items():
-    st.subheader(f"{key.capitalize()} Results")
-    df = pd.DataFrame.from_dict(res_dict, orient="index")
+# Display results
+for section, data in results.items():
+    st.subheader(section.title())
+    df = pd.DataFrame.from_dict(data, orient="index")
     st.dataframe(df.style.format(precision=3), use_container_width=True)
