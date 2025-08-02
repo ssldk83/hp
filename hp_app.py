@@ -83,11 +83,6 @@ h = [conn.h.val for conn in [c1, c2, c3, c4]]
 T = [conn.T.val for conn in [c1, c2, c3, c4]]
 p = [conn.p.val for conn in [c1, c2, c3, c4]]
 
-# Print all variables for debugging
-st.subheader("Debugging Information")
-for i, (hi, Ti, pi) in enumerate(zip(h, T, p), start=1):
-    st.write(f"Point {i}: Enthalpy = {hi:.2f} J/kg, Temperature = {Ti:.2f} K, Pressure = {pi:.2f} bar")
-
 # Heat balance
 q_evap = mass_flow * (h[0] - h[3])
 q_cond = mass_flow * (h[1] - h[2])
