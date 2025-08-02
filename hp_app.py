@@ -139,8 +139,8 @@ def run_simulation():
     cd.set_attr(design=["pr2", "ttd_u"], offdesign=["zeta2", "kA_char"])
 
     # ✅ FIX: Manual characteristic lines
-    kA_char1 = CharLine(x_vals=[0, 1], y_vals=[0, 1])
-    kA_char2 = CharLine(x_vals=[0, 1], y_vals=[0, 1])
+    kA_char1 = CharLine([0, 1], [0, 1])
+    kA_char2 = CharLine([0, 1], [0, 1])
     ev.set_attr(kA_char1=kA_char1, kA_char2=kA_char2,
                 design=["pr1", "ttd_l"], offdesign=["zeta1", "kA_char"])
     su.set_attr(design=["pr1", "pr2", "ttd_u"], offdesign=["zeta1", "zeta2", "kA_char"])
