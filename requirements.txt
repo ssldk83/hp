@@ -1,4 +1,5 @@
 streamlit
+numpy
 CoolProp
 tespy
-numpy
+plotly
