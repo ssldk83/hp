@@ -3,6 +3,7 @@ import pandas as pd
 import uuid
 import os
 import json
+import streamlit.components.v1 as components
 from tespy.networks import Network
 from tespy.components import (
     Condenser, CycleCloser, SimpleHeatExchanger, Pump, Sink, Source,
@@ -27,7 +28,7 @@ def run_simulation(working_fluid):
     defaults = fluid_defaults[working_fluid]
     nw = Network(T_unit="C", p_unit="bar", h_unit="kJ / kg", m_unit="kg / s")
 
-    # Components
+    # ------------------ COMPONENTS ------------------
     c_in = Source("refrigerant in")
     cons_closer = CycleCloser("consumer cycle closer")
     va = Sink("valve")
@@ -35,7 +36,7 @@ def run_simulation(working_fluid):
     rp = Pump("recirculation pump")
     cons = SimpleHeatExchanger("consumer")
 
-    # Connections
+    # ------------------ CONNECTIONS ------------------
     c0 = Connection(c_in, "out1", cd, "in1", label="0")
     c1 = Connection(cd, "out1", va, "in1", label="1")
     c20 = Connection(cons_closer, "out1", rp, "in1", label="20")
@@ -44,6 +45,7 @@ def run_simulation(working_fluid):
     c23 = Connection(cons, "out1", cons_closer, "in1", label="23")
     nw.add_conns(c0, c1, c20, c21, c22, c23)
 
+    # ------------------ ATTRIBUTES ------------------
     cd.set_attr(pr1=0.99, pr2=0.99)
     rp.set_attr(eta_s=0.75)
     cons.set_attr(pr=0.99)
@@ -56,7 +58,7 @@ def run_simulation(working_fluid):
 
     nw.solve("design")
 
-    # Evaporator system
+    # ------------------ EVAPORATOR SYSTEM ------------------
     amb_in = Source("source ambient")
     amb_out = Sink("sink ambient")
     va = Valve("valve")
@@ -86,7 +88,7 @@ def run_simulation(working_fluid):
     c19.set_attr(T=9, p=1.013)
     nw.solve("design")
 
-    # Compressors & loop
+    # ------------------ COMPRESSORS + LOOP ------------------
     cp1 = Compressor("compressor 1")
     cp2 = Compressor("compressor 2")
     ic = HeatExchanger("intermittent cooling")
@@ -125,7 +127,7 @@ def run_simulation(working_fluid):
     c14.set_attr(T=30)
     nw.solve("design")
 
-    # Final corrections
+    # ------------------ FINAL CLEANUP ------------------
     c0.set_attr(p=None)
     cd.set_attr(ttd_u=5)
     c4.set_attr(T=None)
@@ -147,7 +149,7 @@ def run_simulation(working_fluid):
     cons.set_attr(design=["pr"], offdesign=["zeta"])
     cd.set_attr(design=["pr2", "ttd_u"], offdesign=["zeta2", "kA_char"])
 
-    # Manual characteristic lines
+    # Characteristic lines
     kA_char1 = CharLine([0, 1], [0, 1])
     kA_char2 = CharLine([0, 1], [0, 1])
     ev.set_attr(kA_char1=kA_char1, kA_char2=kA_char2,
@@ -156,6 +158,7 @@ def run_simulation(working_fluid):
     ic.set_attr(design=["pr1", "pr2"], offdesign=["zeta1", "zeta2", "kA_char"])
     c14.set_attr(design=["T"])
 
+    # Save & offdesign solve
     with NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         design_path = tmp.name
         nw.save(design_path)
@@ -168,31 +171,32 @@ def run_simulation(working_fluid):
     results = {k: v.to_dict() for k, v in nw.results.items()}
     return cop, results
 
-# ---------------- STREAMLIT APP ----------------
+# ------------------ STREAMLIT UI ------------------
 st.set_page_config(page_title="TESPy NH₃ Heat Pump", layout="wide")
 st.title("TESPy Heat Pump Simulation")
 
-# --- Sidebar Fluid Selection ---
+# --- Sidebar: Working Fluid ---
 fluid_label = st.sidebar.selectbox("Working Fluid", {
     "Ammonia (NH₃)": "NH3",
     "Propane (R290)": "Propane",
     "Isobutane (R600a)": "Isobutane"
 })
 
-# --- Optional SVG Diagram ---
+# --- Sidebar: SVG Schematic ---
 st.sidebar.markdown("### Heat Pump Schematic")
 try:
     with open("hp_sample.svg", "r") as f:
         svg_code = f.read()
-    st.sidebar.components.v1.html(svg_code, height=500)
+    with st.sidebar:
+        components.html(svg_code, height=500)
 except FileNotFoundError:
     st.sidebar.warning("SVG diagram not found (hp_sample.svg)")
 
-# --- Run TESPy Simulation ---
-with st.spinner(f"Simulating {fluid_label} cycle..."):
+# --- Run Simulation ---
+with st.spinner(f"Running simulation for {fluid_label}..."):
     cop, results = run_simulation(fluid_label)
 
-st.success("Simulation completed!")
+st.success("Simulation completed.")
 st.metric(label="Coefficient of Performance (COP)", value=f"{cop:.2f}")
 
 # --- Show Results ---
