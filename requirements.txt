@@ -1,5 +1,5 @@
-streamlit
-numpy
-CoolProp
-tespy
-plotly
+streamlit==1.38.0
+numpy==1.26.4
+CoolProp==6.4.3
+tespy==0.7.5
+plotly==5.22.0
