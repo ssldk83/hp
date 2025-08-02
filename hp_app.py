@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import uuid
 import os
 import json
 from tespy.networks import Network
-from tespy.components import (Condenser, CycleCloser, SimpleHeatExchanger, Pump, Sink,
-                              Source, Valve, Drum, HeatExchanger, Compressor, Splitter, Merge)
+from tespy.components import (
+    Condenser, CycleCloser, SimpleHeatExchanger, Pump, Sink, Source,
+    Valve, Drum, HeatExchanger, Compressor, Splitter, Merge
+)
 from tespy.connections import Connection
 from tespy.tools.characteristics import CharLine
 from CoolProp.CoolProp import PropsSI
@@ -15,11 +16,18 @@ from tempfile import NamedTemporaryFile
 def json_with_nan_fix(obj):
     return json.loads(json.dumps(obj, default=lambda x: None))
 
-def run_simulation():
-    working_fluid = "NH3"
+# Default fluid-specific parameters
+fluid_defaults = {
+    "NH3": {"cond_T": 95, "inlet_T": 170},
+    "Propane": {"cond_T": 50, "inlet_T": 120},
+    "Isobutane": {"cond_T": 45, "inlet_T": 110}
+}
+
+def run_simulation(working_fluid):
+    defaults = fluid_defaults[working_fluid]
     nw = Network(T_unit="C", p_unit="bar", h_unit="kJ / kg", m_unit="kg / s")
 
-    # Initial setup
+    # Components
     c_in = Source("refrigerant in")
     cons_closer = CycleCloser("consumer cycle closer")
     va = Sink("valve")
@@ -27,6 +35,7 @@ def run_simulation():
     rp = Pump("recirculation pump")
     cons = SimpleHeatExchanger("consumer")
 
+    # Connections
     c0 = Connection(c_in, "out1", cd, "in1", label="0")
     c1 = Connection(cd, "out1", va, "in1", label="1")
     c20 = Connection(cons_closer, "out1", rp, "in1", label="20")
@@ -39,8 +48,8 @@ def run_simulation():
     rp.set_attr(eta_s=0.75)
     cons.set_attr(pr=0.99)
 
-    p_cond = PropsSI("P", "Q", 1, "T", 273.15 + 95, working_fluid) / 1e5
-    c0.set_attr(T=170, p=p_cond, fluid={working_fluid: 1})
+    p_cond = PropsSI("P", "Q", 1, "T", 273.15 + defaults["cond_T"], working_fluid) / 1e5
+    c0.set_attr(T=defaults["inlet_T"], p=p_cond, fluid={working_fluid: 1})
     c20.set_attr(T=60, p=2, fluid={"water": 1})
     c22.set_attr(T=90)
     cons.set_attr(Q=-230e3)
@@ -77,7 +86,7 @@ def run_simulation():
     c19.set_attr(T=9, p=1.013)
     nw.solve("design")
 
-    # Compressors and loop
+    # Compressors & loop
     cp1 = Compressor("compressor 1")
     cp2 = Compressor("compressor 2")
     ic = HeatExchanger("intermittent cooling")
@@ -116,7 +125,7 @@ def run_simulation():
     c14.set_attr(T=30)
     nw.solve("design")
 
-    # Design refinements
+    # Final corrections
     c0.set_attr(p=None)
     cd.set_attr(ttd_u=5)
     c4.set_attr(T=None)
@@ -130,7 +139,7 @@ def run_simulation():
     c8.set_attr(h=None, Td_bp=4)
     nw.solve("design")
 
-    # Design and offdesign attributes
+    # Design/offdesign flags
     cp1.set_attr(design=["eta_s"], offdesign=["eta_s_char"])
     cp2.set_attr(design=["eta_s"], offdesign=["eta_s_char"])
     rp.set_attr(design=["eta_s"], offdesign=["eta_s_char"])
@@ -138,7 +147,7 @@ def run_simulation():
     cons.set_attr(design=["pr"], offdesign=["zeta"])
     cd.set_attr(design=["pr2", "ttd_u"], offdesign=["zeta2", "kA_char"])
 
-    # ✅ FIX: Manual characteristic lines
+    # Manual characteristic lines
     kA_char1 = CharLine([0, 1], [0, 1])
     kA_char2 = CharLine([0, 1], [0, 1])
     ev.set_attr(kA_char1=kA_char1, kA_char2=kA_char2,
@@ -147,30 +156,46 @@ def run_simulation():
     ic.set_attr(design=["pr1", "pr2"], offdesign=["zeta1", "zeta2", "kA_char"])
     c14.set_attr(design=["T"])
 
-    # Save & simulate offdesign
     with NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         design_path = tmp.name
         nw.save(design_path)
     nw.solve("offdesign", design_path=design_path)
     os.remove(design_path)
 
-    # Results
     q_out = cons.Q.val
     w_in = cp1.P.val + cp2.P.val + rp.P.val + hsp.P.val
     cop = abs(q_out) / w_in if w_in else None
     results = {k: v.to_dict() for k, v in nw.results.items()}
     return cop, results
 
-# --- Streamlit UI ---
-st.title("TESPy NH₃ Heat Pump Simulation")
+# ---------------- STREAMLIT APP ----------------
+st.set_page_config(page_title="TESPy NH₃ Heat Pump", layout="wide")
+st.title("TESPy Heat Pump Simulation")
 
-with st.spinner("Running TESPy simulation..."):
-    cop, results = run_simulation()
+# --- Sidebar Fluid Selection ---
+fluid_label = st.sidebar.selectbox("Working Fluid", {
+    "Ammonia (NH₃)": "NH3",
+    "Propane (R290)": "Propane",
+    "Isobutane (R600a)": "Isobutane"
+})
 
-st.success("Simulation completed successfully!")
-st.markdown(f"### 💡 COP: `{cop:.2f}`")
+# --- Optional SVG Diagram ---
+st.sidebar.markdown("### Heat Pump Schematic")
+try:
+    with open("hp_sample.svg", "r") as f:
+        svg_code = f.read()
+    st.sidebar.components.v1.html(svg_code, height=500)
+except FileNotFoundError:
+    st.sidebar.warning("SVG diagram not found (hp_sample.svg)")
 
-# Display results
+# --- Run TESPy Simulation ---
+with st.spinner(f"Simulating {fluid_label} cycle..."):
+    cop, results = run_simulation(fluid_label)
+
+st.success("Simulation completed!")
+st.metric(label="Coefficient of Performance (COP)", value=f"{cop:.2f}")
+
+# --- Show Results ---
 for section, data in results.items():
     st.subheader(section.title())
     df = pd.DataFrame.from_dict(data, orient="index")
