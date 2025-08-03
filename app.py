@@ -129,7 +129,7 @@ if st.button("Calculate"):
                 st.write(f"{label}: {val}")
 
             # Load and modify SVG
-            svg_path = Path("/mnt/data/hp_sample.svg")
+            svg_path = Path("hp_sample.svg")
             svg_content = svg_path.read_text()
             for i, (label, val) in enumerate(value_map.items()):
                 svg_content += f'<text x="20" y="{40 + i * 20}" font-size="14" fill="red">{label}: {val}</text>'
