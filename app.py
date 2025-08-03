@@ -86,6 +86,9 @@ if st.button("Calculate"):
             c6.set_attr(h=h_sat)
             c11.set_attr(p=1.013, T=source_temp_in, fluid={"water": 1})
             c14.set_attr(T=source_temp_out)
+            c7.set_attr(h=None)
+            c9.set_attr(h=None)
+            c8.set_attr(h=None, Td_bp=4)
 
             # Component attributes
             cd.set_attr(pr1=0.99, pr2=0.99, ttd_u=5)
