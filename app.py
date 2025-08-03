@@ -75,7 +75,7 @@ if st.button("Calculate"):
             c21 = Connection(rp, "out1", cd, "in2", label="21")
             c22 = Connection(cd, "out2", cons, "in1", label="22")
             c23 = Connection(cons, "out1", cons_closer, "in1", label="23")
-            nw.add_conns(c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c11, c12, c13, c14, c15, c16, c17, c20, c21, c22, c23)
+            nw.add_conns(c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c11, c12, c13, c14, c15, c16, c17, c18, c19, c20, c21, c22, c23)
 
             # Boundary conditions
             c0.set_attr(p=p_cond, fluid={working_fluid: 1})
