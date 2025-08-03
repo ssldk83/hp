@@ -1,69 +1,20 @@
 import streamlit as st
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+import uuid
+import os
+import base64
+import pandas as pd
+from CoolProp.CoolProp import PropsSI as PSI
 from tespy.networks import Network
 from tespy.components import (Source, Sink, CycleCloser, Compressor, Condenser, Valve,
-                              Pump, HeatExchanger)
+                              Pump, HeatExchanger, Drum, SimpleHeatExchanger, Splitter, Merge)
 from tespy.connections import Connection
-from CoolProp.CoolProp import PropsSI as PSI
+from tespy.tools.characteristics import CharLine
+from tespy.tools.characteristics import load_default_char as ldc
 
-# Define the simulation logic in a function
-def run_simulation(working_fluid, source_temp_in, source_temp_out, sink_temp_in, sink_temp_out):
-
-    # Setup network
-    nw = Network(T_unit='C', p_unit='bar', h_unit='kJ / kg', m_unit='kg / s', fluids=[working_fluid, 'water'])
-
-    # Components
-    cc = CycleCloser('cycle closer')
-    comp = Compressor('compressor')
-    cond = Condenser('condenser')
-    valve = Valve('expansion valve')
-    evap = HeatExchanger('evaporator')
-
-    source = Source('source inlet')
-    source_sink = Sink('source outlet')
-    sink = Sink('district heating out')
-    sink_source = Source('district heating in')
-
-    # Connections
-    c0 = Connection(cc, 'out1', comp, 'in1', fluid={working_fluid: 1})
-    c1 = Connection(comp, 'out1', cond, 'in1', fluid={working_fluid: 1})
-    c2 = Connection(cond, 'out1', valve, 'in1', fluid={working_fluid: 1})
-    c3 = Connection(valve, 'out1', evap, 'in2', fluid={working_fluid: 1})
-    c4 = Connection(evap, 'out2', cc, 'in1', fluid={working_fluid: 1})
-
-    c_source = Connection(source, 'out1', evap, 'in1', fluid={"water": 1})
-    c_source_sink = Connection(evap, 'out1', source_sink, 'in1', fluid={"water": 1})
-    c_sink_source = Connection(sink_source, 'out1', cond, 'in2', fluid={"water": 1})
-    c_sink = Connection(cond, 'out2', sink, 'in1', fluid={"water": 1})
-
-    nw.add_conns(c0, c1, c2, c3, c4, c_source, c_source_sink, c_sink_source, c_sink)
-
-    # Set parameters
-    c_source.set_attr(T=source_temp_in, fluid={'water': 1})
-    c_source_sink.set_attr(T=source_temp_out)
-
-    c_sink_source.set_attr(T=sink_temp_in, fluid={'water': 1})
-    c_sink.set_attr(T=sink_temp_out)
-
-    p_cond = PSI('P', 'Q', 1, 'T', sink_temp_out + 273.15, working_fluid) / 1e5
-    c1.set_attr(p=p_cond)
-    c3.set_attr(p=2)
-
-    evap.set_attr(pr1=0.98, pr2=0.98)
-    cond.set_attr(pr1=0.98, pr2=0.98)
-    comp.set_attr(eta_s=0.8)
-
-    # Solve network
-    nw.solve('design')
-
-    # Compute COP
-    q_out = cond.Q.val
-    w_in = comp.P.val
-    cop = abs(q_out) / w_in if w_in else None
-
-    return nw.results, cop
-
-# Streamlit App
-st.title("Heat Pump Heat & Mass Balance Calculator")
+st.set_page_config(layout="wide")
+st.title("Advanced Heat Pump Heat & Mass Balance Calculator")
 
 fluid_choice = st.selectbox("Select Refrigerant:", ["NH3", "Propane", "Isobutane"])
 source_choice = st.selectbox("Select Heat Source:", ["Wastewater", "Air", "Datacenter"])
@@ -78,14 +29,112 @@ with col2:
     sink_temp_out = st.number_input("Sink Temp Out (District Supply, °C):", value=70)
 
 if st.button("Calculate"):
-    with st.spinner('Calculating...'):
-        results, cop = run_simulation(fluid_choice, source_temp_in, source_temp_out, sink_temp_in, sink_temp_out)
+    with st.spinner('Running simulation...'):
+        try:
+            working_fluid = fluid_choice
+            nw = Network(T_unit="C", p_unit="bar", h_unit="kJ / kg", m_unit="kg / s")
+            # Components setup same as hp_adv.py (abbreviated)
+            cc = CycleCloser("cycle closer")
+            cd = Condenser("condenser")
+            va = Valve("valve")
+            dr = Drum("drum")
+            ev = HeatExchanger("evaporator")
+            su = HeatExchanger("superheater")
+            cp1 = Compressor("compressor 1")
+            cp2 = Compressor("compressor 2")
+            ic = HeatExchanger("intermittent cooling")
+            rp = Pump("recirculation pump")
+            cons = SimpleHeatExchanger("consumer")
+            hsp = Pump("heat source pump")
+            sp = Splitter("splitter")
+            me = Merge("merge")
+            cv = Valve("control valve")
+            hs = Source("ambient intake")
+            amb_out = Sink("ambient out")
+            cons_closer = CycleCloser("consumer cycle closer")
+            sink = Sink("sink")
+            source = Source("source")
 
-    st.success("Calculation Complete")
+            # Connections setup (simplified)
+            p_cond = PSI("P", "Q", 1, "T", 273.15 + sink_temp_out, working_fluid) / 1e5
+            c0 = Connection(cc, "out1", cd, "in1")
+            c1 = Connection(cd, "out1", va, "in1")
+            c2 = Connection(va, "out1", dr, "in1")
+            c3 = Connection(dr, "out1", ev, "in2")
+            c4 = Connection(ev, "out2", dr, "in2")
+            c5 = Connection(dr, "out2", su, "in2")
+            c6 = Connection(su, "out2", cp1, "in1")
+            c7 = Connection(cp1, "out1", ic, "in1")
+            c8 = Connection(ic, "out1", cp2, "in1")
+            c9 = Connection(cp2, "out1", cc, "in1")
+            c11 = Connection(hs, "out1", hsp, "in1")
+            c12 = Connection(hsp, "out1", sp, "in1")
+            c13 = Connection(sp, "out1", ic, "in2")
+            c14 = Connection(ic, "out2", me, "in1")
+            c15 = Connection(sp, "out2", cv, "in1")
+            c16 = Connection(cv, "out1", me, "in2")
+            c17 = Connection(me, "out1", su, "in1")
+            c20 = Connection(cons_closer, "out1", rp, "in1")
+            c21 = Connection(rp, "out1", cd, "in2")
+            c22 = Connection(cd, "out2", cons, "in1")
+            c23 = Connection(cons, "out1", cons_closer, "in1")
+            nw.add_conns(c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c11, c12, c13, c14, c15, c16, c17, c20, c21, c22, c23)
 
-    st.header("Results")
-    st.write(f"Coefficient of Performance (COP): {cop:.2f}")
+            # Boundary conditions
+            c0.set_attr(p=p_cond, fluid={working_fluid: 1})
+            c20.set_attr(T=sink_temp_in, p=2, fluid={"water": 1})
+            c22.set_attr(T=sink_temp_out)
+            c4.set_attr(x=0.9, T=source_temp_out)
+            h_sat = PSI("H", "Q", 1, "T", 273.15 + source_temp_in, working_fluid) / 1e3
+            c6.set_attr(h=h_sat)
+            c11.set_attr(p=1.013, T=source_temp_in, fluid={"water": 1})
+            c14.set_attr(T=source_temp_out)
 
-    for comp, res in results.items():
-        st.subheader(f"{comp}")
-        st.dataframe(res)
+            # Component attributes
+            cd.set_attr(pr1=0.99, pr2=0.99, ttd_u=5)
+            ev.set_attr(pr1=0.99, ttd_l=5)
+            su.set_attr(pr1=0.99, pr2=0.99, ttd_u=5)
+            ic.set_attr(pr1=0.99, pr2=0.98)
+            rp.set_attr(eta_s=0.75)
+            hsp.set_attr(eta_s=0.75)
+            cp1.set_attr(eta_s=0.8)
+            cp2.set_attr(eta_s=0.8)
+            cons.set_attr(Q=-230e3, pr=0.99)
+
+            nw.solve("design")
+
+            # Calculate performance
+            q_out = cons.Q.val
+            w_in = cp1.P.val + cp2.P.val + rp.P.val + hsp.P.val
+            cop = abs(q_out) / w_in if w_in != 0 else None
+
+            # Prepare results
+            results = {k: v.to_dict("index") for k, v in nw.results.items()}
+            value_map = {
+                "COP": round(cop, 2),
+                "Q_out (kW)": round(q_out / 1e3, 1),
+                "W_in (kW)": round(w_in / 1e3, 1),
+                "T_source_in": source_temp_in,
+                "T_source_out": source_temp_out,
+                "T_sink_in": sink_temp_in,
+                "T_sink_out": sink_temp_out,
+            }
+
+            st.success("Calculation Complete")
+            st.header("Results")
+            st.write(f"Coefficient of Performance (COP): {cop:.2f}")
+
+            st.subheader("Key Values")
+            for label, val in value_map.items():
+                st.write(f"{label}: {val}")
+
+            # Load and modify SVG
+            svg_path = Path("/mnt/data/hp_sample.svg")
+            svg_content = svg_path.read_text()
+            for i, (label, val) in enumerate(value_map.items()):
+                svg_content += f'<text x="20" y="{40 + i * 20}" font-size="14" fill="red">{label}: {val}</text>'
+            b64_svg = base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
+            st.markdown(f'<object type="image/svg+xml" data="data:image/svg+xml;base64,{b64_svg}" width="100%"></object>', unsafe_allow_html=True)
+
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
