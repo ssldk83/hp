@@ -24,16 +24,16 @@ def run_simulation(working_fluid, source_temp_in, source_temp_out, sink_temp_in,
     sink_source = Source('district heating in')
 
     # Connections
-    c0 = Connection(cc, 'out1', comp, 'in1')
-    c1 = Connection(comp, 'out1', cond, 'in1')
-    c2 = Connection(cond, 'out1', valve, 'in1')
-    c3 = Connection(valve, 'out1', evap, 'in2')
-    c4 = Connection(evap, 'out2', cc, 'in1')
+    c0 = Connection(cc, 'out1', comp, 'in1', fluid={working_fluid: 1})
+    c1 = Connection(comp, 'out1', cond, 'in1', fluid={working_fluid: 1})
+    c2 = Connection(cond, 'out1', valve, 'in1', fluid={working_fluid: 1})
+    c3 = Connection(valve, 'out1', evap, 'in2', fluid={working_fluid: 1})
+    c4 = Connection(evap, 'out2', cc, 'in1', fluid={working_fluid: 1})
 
-    c_source = Connection(source, 'out1', evap, 'in1')
-    c_source_sink = Connection(evap, 'out1', source_sink, 'in1')
-    c_sink_source = Connection(sink_source, 'out1', cond, 'in2')
-    c_sink = Connection(cond, 'out2', sink, 'in1')
+    c_source = Connection(source, 'out1', evap, 'in1', fluid={"water": 1})
+    c_source_sink = Connection(evap, 'out1', source_sink, 'in1', fluid={"water": 1})
+    c_sink_source = Connection(sink_source, 'out1', cond, 'in2', fluid={"water": 1})
+    c_sink = Connection(cond, 'out2', sink, 'in1', fluid={"water": 1})
 
     nw.add_conns(c0, c1, c2, c3, c4, c_source, c_source_sink, c_sink_source, c_sink)
 
