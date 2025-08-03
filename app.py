@@ -138,10 +138,9 @@ if st.button("Calculate"):
             # Load and modify SVG
             svg_path = Path("hp_sample.svg")
             svg_content = svg_path.read_text()
-            for i, (label, val) in enumerate(value_map.items()):
-                svg_content += f'<text x="20" y="{40 + i * 20}" font-size="14" fill="red">{label}: {val}</text>'
-            b64_svg = base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
-            st.markdown(f'<object type="image/svg+xml" data="data:image/svg+xml;base64,{b64_svg}" width="100%"></object>', unsafe_allow_html=True)
+            
+            print(f"Q_out (W): {q_out}")
+            print(f"W_in total (W): {w_in}")
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
