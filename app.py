@@ -1,10 +1,4 @@
 import streamlit as st
-from pathlib import Path
-from tempfile import NamedTemporaryFile
-import uuid
-import os
-import base64
-import pandas as pd
 from CoolProp.CoolProp import PropsSI as PSI
 from tespy.networks import Network
 from tespy.components import (Source, Sink, CycleCloser, Compressor, Condenser, Valve,
@@ -14,18 +8,18 @@ from tespy.tools.characteristics import CharLine
 from tespy.tools.characteristics import load_default_char as ldc
 
 st.set_page_config(layout="wide")
-st.title("Advanced Heat Pump Heat & Mass Balance Calculator")
+st.title("Heat Pump H&MB Calculator")
 
-fluid_choice = st.selectbox("Select Refrigerant:", ["NH3", "Propane", "Isobutane"])
+fluid_choice = st.selectbox("Select Refrigerant:", ["Propane", "Isobutane", "NH3"])
 source_choice = st.selectbox("Select Heat Source:", ["Wastewater", "Air", "Datacenter"])
 
 col1, col2 = st.columns(2)
 with col1:
-    source_temp_in = st.number_input("Source Temp In (°C):", value=15)
-    source_temp_out = st.number_input("Source Temp Out (°C):", value=9)
+    source_temp_in = st.number_input("Source Temp In (°C):", value=10.1)
+    source_temp_out = st.number_input("Source Temp Out (°C):", value=3.5)
 
 with col2:
-    sink_temp_in = st.number_input("Sink Temp In (District Return, °C):", value=40)
+    sink_temp_in = st.number_input("Sink Temp In (District Return, °C):", value=45)
     sink_temp_out = st.number_input("Sink Temp Out (District Supply, °C):", value=70)
 
 if st.button("Calculate"):
@@ -33,7 +27,7 @@ if st.button("Calculate"):
         try:
             working_fluid = fluid_choice
             nw = Network(T_unit="C", p_unit="bar", h_unit="kJ / kg", m_unit="kg / s")
-            # Components setup same as hp_adv.py (abbreviated)
+            # Components
             cc = CycleCloser("cycle closer")
             cd = Condenser("condenser")
             va = Valve("valve")
@@ -55,29 +49,32 @@ if st.button("Calculate"):
             sink = Sink("sink")
             source = Source("source")
 
-            # Connections setup (simplified)
+            # Connections
             p_cond = PSI("P", "Q", 1, "T", 273.15 + sink_temp_out, working_fluid) / 1e5
-            c0 = Connection(cc, "out1", cd, "in1")
-            c1 = Connection(cd, "out1", va, "in1")
-            c2 = Connection(va, "out1", dr, "in1")
-            c3 = Connection(dr, "out1", ev, "in2")
-            c4 = Connection(ev, "out2", dr, "in2")
-            c5 = Connection(dr, "out2", su, "in2")
-            c6 = Connection(su, "out2", cp1, "in1")
-            c7 = Connection(cp1, "out1", ic, "in1")
-            c8 = Connection(ic, "out1", cp2, "in1")
-            c9 = Connection(cp2, "out1", cc, "in1")
-            c11 = Connection(hs, "out1", hsp, "in1")
-            c12 = Connection(hsp, "out1", sp, "in1")
-            c13 = Connection(sp, "out1", ic, "in2")
-            c14 = Connection(ic, "out2", me, "in1")
-            c15 = Connection(sp, "out2", cv, "in1")
-            c16 = Connection(cv, "out1", me, "in2")
-            c17 = Connection(me, "out1", su, "in1")
-            c20 = Connection(cons_closer, "out1", rp, "in1")
-            c21 = Connection(rp, "out1", cd, "in2")
-            c22 = Connection(cd, "out2", cons, "in1")
-            c23 = Connection(cons, "out1", cons_closer, "in1")
+            c0 = Connection(cc, "out1", cd, "in1", label="0")
+            c1 = Connection(cd, "out1", va, "in1", label="1")
+            c1 = Connection(cd, "out1", va, "in1", label="1")
+            c2 = Connection(va, "out1", dr, "in1", label="2")
+            c3 = Connection(dr, "out1", ev, "in2", label="3")
+            c4 = Connection(ev, "out2", dr, "in2", label="4")
+            c5 = Connection(dr, "out2", su, "in2", label="5")
+            c6 = Connection(su, "out2", cp1, "in1", label="6")
+            c7 = Connection(cp1, "out1", ic, "in1", label="7")
+            c8 = Connection(ic, "out1", cp2, "in1", label="8")
+            c9 = Connection(cp2, "out1", cc, "in1", label="9")
+            c11 = Connection(hs, "out1", hsp, "in1", label="11")
+            c12 = Connection(hsp, "out1", sp, "in1", label="12")
+            c13 = Connection(sp, "out1", ic, "in2", label="13")
+            c14 = Connection(ic, "out2", me, "in1", label="14")
+            c15 = Connection(sp, "out2", cv, "in1", label="15")
+            c16 = Connection(cv, "out1", me, "in2", label="16")
+            c17 = Connection(me, "out1", su, "in1", label="17")
+            c18 = Connection(su, "out1", ev, "in1", label="18")
+            c19 = Connection(ev, "out1", amb_out, "in1", label="19")
+            c20 = Connection(cons_closer, "out1", rp, "in1", label="20")
+            c21 = Connection(rp, "out1", cd, "in2", label="21")
+            c22 = Connection(cd, "out2", cons, "in1", label="22")
+            c23 = Connection(cons, "out1", cons_closer, "in1", label="23")
             nw.add_conns(c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c11, c12, c13, c14, c15, c16, c17, c20, c21, c22, c23)
 
             # Boundary conditions
