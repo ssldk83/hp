@@ -131,6 +131,7 @@ if st.button("Calculate"):
                 "rp.P": rp.P.val,
                 "hsp.P": hsp.P.val,
                 "p_cond (barg)": p_cond,
+                "source_in_T": c11.T.val,
             }
 
             st.success("Calculation Complete")
