@@ -91,7 +91,7 @@ if st.button("Calculate"):
             c4.set_attr(x=0.9, T=source_temp_out)
             h_sat = PSI("H", "Q", 1, "T", 273.15 + source_temp_in, working_fluid) / 1e3
             c6.set_attr(h=h_sat)
-            c11.set_attr(p=1.013, T=source_temp_in, fluid={"water": 1})
+            c11.set_attr(p=1.013, T=15, fluid={"water": 1}, m=2.5)  # set desired flow rate here
             c19.set_attr(T=source_temp_out)
             c7.set_attr(h=None)
             c9.set_attr(h=None)
