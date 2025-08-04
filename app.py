@@ -129,6 +129,7 @@ if st.button("Calculate"):
                 "cp2.P.val": cp2.P.val,
                 "rp.P.val": rp.P.val,
                 "hsp.P.val": hsp.P.val,
+                "p_cond": p_cond,
             }
 
             st.success("Calculation Complete")
