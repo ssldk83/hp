@@ -125,7 +125,7 @@ if st.button("Calculate"):
                 "T_source_out": source_temp_out,
                 "T_sink_in": sink_temp_in,
                 "T_sink_out": sink_temp_out,
-                "cp1.P": cp1P.val,
+                "cp1.P": cp1.P.val,
                 "cp2.P.val": cp2.P.val,
                 "rp.P.val": rp.P.val,
                 "hsp.P.val": hsp.P.val,
