@@ -92,10 +92,11 @@ if st.button("Calculate"):
             h_sat = PSI("H", "Q", 1, "T", 273.15 + source_temp_in, working_fluid) / 1e3
             c6.set_attr(h=h_sat)
             c11.set_attr(p=1.013, T=source_temp_in, fluid={"water": 1})
-            c14.set_attr(T=source_temp_out)
+            c19.set_attr(T=source_temp_out)
             c7.set_attr(h=None)
             c9.set_attr(h=None)
             c8.set_attr(h=None, Td_bp=4)
+            
 
             # Component attributes
             cd.set_attr(pr1=0.99, pr2=0.99, ttd_u=5)
@@ -126,10 +127,10 @@ if st.button("Calculate"):
                 "T_sink_in": sink_temp_in,
                 "T_sink_out": sink_temp_out,
                 "cp1.P": cp1.P.val,
-                "cp2.P.val": cp2.P.val,
-                "rp.P.val": rp.P.val,
-                "hsp.P.val": hsp.P.val,
-                "p_cond": p_cond,
+                "cp2.P": cp2.P.val,
+                "rp.P": rp.P.val,
+                "hsp.P": hsp.P.val,
+                "p_cond (barg)": p_cond,
             }
 
             st.success("Calculation Complete")
