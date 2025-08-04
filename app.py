@@ -137,17 +137,17 @@ if st.button("Calculate"):
 
             # Load and modify SVG
             svg_path = Path("hp_sample.svg")
-if svg_path.exists():
-    svg_content = svg_path.read_text()
+            if svg_path.exists():
+                svg_content = svg_path.read_text()
 
-    # Encode and display SVG without modification
-    b64_svg = base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
-    st.markdown(
+                # Encode and display SVG without modification
+                b64_svg = base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
+                st.markdown(
         f'<object type="image/svg+xml" data="data:image/svg+xml;base64,{b64_svg}" width="100%"></object>',
         unsafe_allow_html=True,
     )
-else:
-    st.error("SVG file not found.")
+            else:
+                st.error("SVG file not found.")
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
