@@ -125,6 +125,10 @@ if st.button("Calculate"):
                 "T_source_out": source_temp_out,
                 "T_sink_in": sink_temp_in,
                 "T_sink_out": sink_temp_out,
+                "cp1.P": cp1P.val,
+                "cp2.P.val": cp2.P.val,
+                "rp.P.val": rp.P.val,
+                "hsp.P.val": hsp.P.val,
             }
 
             st.success("Calculation Complete")
@@ -142,10 +146,7 @@ if st.button("Calculate"):
 
                 # Encode and display SVG without modification
                 b64_svg = base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
-                st.markdown(
-        f'<object type="image/svg+xml" data="data:image/svg+xml;base64,{b64_svg}" width="100%"></object>',
-        unsafe_allow_html=True,
-    )
+                st.markdown(f'<object type="image/svg+xml" data="data:image/svg+xml;base64,{b64_svg}" width="100%"></object>',unsafe_allow_html=True)
             else:
                 st.error("SVG file not found.")
 
